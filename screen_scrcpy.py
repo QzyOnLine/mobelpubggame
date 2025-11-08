@@ -3,39 +3,80 @@ import subprocess
 import time
 
 PKG_NAME = "com.tencent.tmgp.pubgmhd"   # 和平精英应用包名
-ACTIVITY = "com.epicgames.ue4.SplashActivity"  # 启动 Activity（通常通用）
+ACTIVITY = "com.epicgames.ue4.SplashActivity"  # 启动 Activity（通常通用)
 
-def open_pubg():
-    """打开和平精英并等待完全加载"""
+def find_device_serial_by_name(device_name: str, timeout: float = 2.0):
+    """通过 adb devices -l 查找包含 device_name 的可用设备 serial（只返回状态为 'device' 的那一项）"""
     try:
-        # # 1. 唤醒屏幕（若灭屏）
-        # subprocess.run(["adb", "shell", "input", "keyevent", "KEYCODE_POWER"], check=False)
-        # time.sleep(0.5)
+        p = subprocess.run(["adb", "devices", "-l"], capture_output=True, text=True, check=True, timeout=timeout)
+        out = p.stdout.splitlines()
+    except Exception as e:
+        print(f"查询 adb 设备失败: {e}")
+        return None
+    for line in out:
+        line = line.strip()
+        if not line or line.startswith("List of devices"):
+            continue
+        # 示例行: "192.168.137.42:35043 device product:... model:PFZM10 ..."
+        if " device " not in line:
+            continue
+        if device_name in line:
+            serial = line.split()[0]
+            return serial
+    return None
 
-        # # 2. 解锁（若存在滑动锁，可继续追加滑动解锁命令）
-        # subprocess.run(["adb", "shell", "input", "swipe", "540", "1500", "540", "800"], check=False)
-        # time.sleep(0.5)
-
-        # 3. 启动应用
-        cmd = ["adb", "shell", "am", "start", "-n", f"{PKG_NAME}/{ACTIVITY}"]
+def open_pubg(device_name: str = "PFZM10", serial: str = None):
+    """打开和平精英并等待完全加载，优先使用 serial，如果未传则按 device_name 查找"""
+    try:
+        if serial is None and device_name:
+            serial = find_device_serial_by_name(device_name)
+            if serial is None:
+                print(f"未找到状态为 'device' 且包含名字 '{device_name}' 的设备，请检查 adb 连接")
+                return
+        cmd = ["adb", "-s", serial, "shell", "am", "start", "-n", f"{PKG_NAME}/{ACTIVITY}"] if serial else ["adb", "shell", "am", "start", "-n", f"{PKG_NAME}/{ACTIVITY}"]
         subprocess.run(cmd, check=True)
-        print("已发送启动命令，等待游戏加载...")
-        time.sleep(5)  # 可视机器性能调整
+        print(f"已发送启动命令（serial={serial}），等待游戏加载...")
+        time.sleep(5)
         print("和平精英应已打开！")
     except subprocess.CalledProcessError as e:
         print("adb 执行失败，请检查设备连接与授权：", e)
+    except Exception as e:
+        print("open_pubg 异常：", e)
 
-def record_android():
-    cmd = [
-        "scrcpy",
-        "--window-x", "2189",       # 扔到物理屏外
-        "--window-y", "0",
-        #"--max-size", "1080",      # 录制分辨率 1080p（可改 720/1440）
-        "--window-width", "1000",   # 本地窗口固定数字 px（高自动等比）
-        #"--record", "auto.mp4",    # 后台同时录成 mp4
-        #"--no-display"             # 可选：不弹窗口，纯后台录
-    ]
-    subprocess.run(cmd)
+def record_android(device_name: str = "PFZM10", serial: str = None):
+    """启动 scrcpy 并指定 -s serial（若未传 serial 会按 device_name 查找）"""
+    try:
+        if serial is None and device_name:
+            serial = find_device_serial_by_name(device_name)
+            if serial is None:
+                print(f"未找到状态为 'device' 且包含名字 '{device_name}' 的设备，scrcpy 无法指定设备")
+                # 仍然尝试不带 -s 启动 scrcpy（可修改为直接返回）
+                cmd = [
+                    "scrcpy",
+                    "--window-x", "2189",
+                    "--window-y", "0",
+                    "--window-width", "1000",
+                ]
+            else:
+                cmd = [
+                    "scrcpy",
+                    "-s", serial,
+                    "--window-x", "2189",
+                    "--window-y", "0",
+                    "--window-width", "1000",
+                ]
+        else:
+            cmd = [
+                "scrcpy",
+                "-s", serial,
+                "--window-x", "2189",
+                "--window-y", "0",
+                "--window-width", "1000",
+            ]
+        print(f"启动 scrcpy：{' '.join(cmd)}")
+        subprocess.run(cmd)
+    except Exception as e:
+        print(f"启动 scrcpy/record 失败: {e}")
 
 if __name__ == "__main__":
      open_pubg()
